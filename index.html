@@ -252,9 +252,16 @@ function chip(kind, state, text){
   (kind==='hr' ? $('hrInfo') : $('stInfo')).textContent = text;
 }
 
+function msg(text){ const b=$('banner'); b.textContent=text; b.style.display='block'; }
+
 async function pick(kind){
-  if (!navigator.bluetooth) return showBanner();
+  if (!navigator.bluetooth || !window.isSecureContext) return showBanner(true);
   if (demo.on) stopDemo();
+  try {
+    if (navigator.bluetooth.getAvailability && !(await navigator.bluetooth.getAvailability()))
+      return msg('Bluetooth ser ut til å være slått av på nettbrettet. Slå på Bluetooth (og Posisjon) i hurtigmenyen og prøv igjen.');
+  } catch(e){}
+  chip(kind,'wait','søker…');
   const opts = kind==='hr'
     ? { filters:[{services:['heart_rate']}], optionalServices:['battery_service'] }
     : { filters:[{namePrefix:'Stryd'},{services:['running_speed_and_cadence']},{services:['cycling_power']}],
@@ -266,7 +273,14 @@ async function pick(kind){
     if (!d._tmBound){ d.addEventListener('gattserverdisconnected', () => onDisc(kind, d)); d._tmBound = true; }
     await connect(kind);
   } catch(e){
-    if (e.name !== 'NotFoundError') chip(kind,'off','feil: '+e.message);
+    const m = (e && e.message) || String(e);
+    if (/cancel/i.test(m)) { chip(kind, dev[kind]?.gatt.connected ? 'on' : 'off', dev[kind]?.gatt.connected ? (dev[kind].name||'tilkoblet') : 'avbrutt – trykk for å prøve igjen'); return; }
+    chip(kind,'off','feil');
+    let hint = '';
+    if (/adapter not available|bluetooth.*(off|disabled)/i.test(m)) hint = ' → Slå på Bluetooth på nettbrettet.';
+    else if (/permission|denied|not allowed/i.test(m)) hint = ' → Gi Chrome tillatelse til «Enheter i nærheten» og Posisjon (Innstillinger → Apper → Chrome → Tillatelser).';
+    else if (/globally disabled|policy/i.test(m)) hint = ' → Web Bluetooth er sperret i denne nettleseren.';
+    msg('Kunne ikke koble til ' + (kind==='hr'?'pulsbelte':'Stryd') + ': ' + m + hint);
   }
 }
 
@@ -332,11 +346,12 @@ $('btnFull').onclick = () => {
   requestWake();
 };
 
-function showBanner(){
-  const b = $('banner');
-  if (!window.isSecureContext) b.textContent = 'Siden må åpnes via https:// (eller localhost) for at Bluetooth skal virke.';
-  else b.textContent = 'Denne nettleseren støtter ikke Web Bluetooth. Bruk Chrome på Samsung-nettbrettet. (Demo-knappen viser hvordan det ser ut.)';
-  b.style.display = 'block';
+function showBanner(clicked){
+  const ua = navigator.userAgent;
+  const browser = /SamsungBrowser/.test(ua) ? 'Samsung Internet' : /; wv\)|FBAN|FBAV|Instagram|GSA\//.test(ua) ? 'en innebygd app-nettleser' : /Firefox/.test(ua) ? 'Firefox' : null;
+  if (!window.isSecureContext) msg('Siden må åpnes via https:// for at Bluetooth skal virke.');
+  else msg((clicked ? 'Kan ikke koble til: ' : '') + 'denne nettleseren' + (browser ? ' (' + browser + ')' : '') +
+    ' støtter ikke Bluetooth fra nettsider. Åpne https://jskjorv.github.io/tredemolle/ i Google Chrome i stedet. (Demo-knappen viser hvordan det ser ut.)');
 }
 if (!navigator.bluetooth || !window.isSecureContext) showBanner();
 
