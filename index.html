@@ -348,6 +348,9 @@ async function connect(kind){
       try { await connectOnce(kind); break; }
       catch(e){
         log(NAME[kind] + ': forsøk ' + a + ' feilet – ' + (e.name||'') + ' ' + e.message);
+        if (/authenticat|insufficient|encrypt|pair/i.test(e.message)) {
+          msg((kind==='hr' ? 'Pulsbeltet' : 'Stryd') + ' krever paring før nettsiden får lese data. Gå til Android-innstillinger → Tilkoblinger → Bluetooth → «Søk», velg «' + (d.name||'enheten') + '» og trykk «Par». Last så denne siden på nytt og koble til igjen.');
+        }
         if (a >= 3) throw e;
         try { if (d.gatt.connected) d.gatt.disconnect(); } catch(_){}
         await sleep(1200);
@@ -383,8 +386,9 @@ function scheduleReconnect(kind, d){
 }
 
 function dropHint(kind){
+  if ($('banner').textContent.includes('krever paring')) return;   // behold den mer presise meldingen
   msg(kind==='hr'
-    ? 'Pulsbeltet mister forbindelsen hele tiden. Sjekk: 1) Beltet må sitte på kroppen – HRM 700 sovner uten puls. 2) Klokka må være koblet til beltet via ANT+, ikke Bluetooth. 3) Ingen andre apper (Zwift, Garmin Connect, Strava o.l.) på tab eller telefon er koblet til beltet. 4) Beltet skal ikke være paret i Android sine Bluetooth-innstillinger. Trykk «Logg» for detaljer.'
+    ? 'Pulsbeltet mister forbindelsen hele tiden. Sjekk: 1) Beltet må sitte på kroppen – HRM 700 sovner uten puls. 2) Garmin HRM 600/700 krever paring: gå til Android-innstillinger → Tilkoblinger → Bluetooth, velg pulsbeltet og trykk «Par» (med beltet på). Last så siden på nytt og koble til her. 3) Klokka bør være koblet til beltet via ANT+, ikke Bluetooth. 4) Ingen andre apper (Zwift, Strava o.l.) skal være koblet til beltet. Trykk «Logg» for detaljer.'
     : 'Stryd mister forbindelsen hele tiden. Sjekk at klokka er koblet til Stryd via ANT+, at Stryd-appen på telefonen ikke er koblet til, og at podden er våken (rist den). Trykk «Logg» for detaljer.');
 }
 
