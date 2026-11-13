@@ -101,6 +101,7 @@ dialog .row{display:flex;gap:10px;justify-content:flex-end;margin-top:16px}
   <div class="chip" id="chipHr" title="Trykk for å koble til pulsbelte"><span class="dot"></span><span>Pulsbelte</span><small id="hrInfo">trykk for å koble til</small></div>
   <div class="chip" id="chipSt" title="Trykk for å koble til Stryd"><span class="dot"></span><span>Stryd</span><small id="stInfo">trykk for å koble til</small></div>
   <div class="spacer"></div>
+  <button class="b icon" id="btnLog" title="Tilkoblingslogg">Logg</button>
   <button class="b icon" id="btnDemo" title="Demomodus">Demo</button>
   <button class="b icon" id="btnSettings" title="Innstillinger">⚙︎</button>
   <button class="b icon" id="btnFull" title="Fullskjerm">⛶</button>
@@ -160,6 +161,12 @@ dialog .row{display:flex;gap:10px;justify-content:flex-end;margin-top:16px}
   <label><span>Doble kadens<small>slå på hvis kadensen vises halvert</small></span><input type="checkbox" id="setCadX2"></label>
   <label><span>Autostart/pause<small>tid går bare når du løper</small></span><input type="checkbox" id="setAuto"></label>
   <div class="row"><button class="b" id="dlgCancel">Avbryt</button><button class="b primary" id="dlgSave">Lagre</button></div>
+</dialog>
+
+<dialog id="dlgLog">
+  <h2>Tilkoblingslogg</h2>
+  <pre id="logTxt" style="white-space:pre-wrap;font-size:13px;max-height:55vh;overflow:auto;background:var(--panel2);padding:10px;border-radius:10px;user-select:text;-webkit-user-select:text">(tom)</pre>
+  <div class="row"><button class="b" id="logClose">Lukk</button></div>
 </dialog>
 
 <script>
@@ -252,6 +259,13 @@ function chip(kind, state, text){
   (kind==='hr' ? $('hrInfo') : $('stInfo')).textContent = text;
 }
 
+const logLines = [];
+function log(t){
+  const ts = new Date().toLocaleTimeString('nb-NO');
+  logLines.push(ts + '  ' + t); if (logLines.length > 80) logLines.shift();
+  const el = $('logTxt'); if (el) el.textContent = logLines.join('\n');
+  console.log(t);
+}
 function msg(text){ const b=$('banner'); b.textContent=text; b.style.display='block'; }
 
 async function pick(kind){
@@ -271,7 +285,9 @@ async function pick(kind){
     if (dev[kind] && dev[kind] !== d && dev[kind].gatt.connected){ manualOff[kind]=true; dev[kind].gatt.disconnect(); }
     dev[kind] = d; manualOff[kind] = false; retry[kind] = 0;
     if (!d._tmBound){ d.addEventListener('gattserverdisconnected', () => onDisc(kind, d)); d._tmBound = true; }
-    await connect(kind);
+    log(NAME[kind] + ': valgt «' + (d.name||'?') + '»');
+    try { await queued(() => connect(kind)); }
+    catch(e){ log(NAME[kind] + ': ga opp – ' + e.message); dropHint(kind); scheduleReconnect(kind, d); return; }
   } catch(e){
     const m = (e && e.message) || String(e);
     if (/cancel/i.test(m)) { chip(kind, dev[kind]?.gatt.connected ? 'on' : 'off', dev[kind]?.gatt.connected ? (dev[kind].name||'tilkoblet') : 'avbrutt – trykk for å prøve igjen'); return; }
@@ -284,54 +300,99 @@ async function pick(kind){
   }
 }
 
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+const connecting = { hr:false, st:false };
+const timers = { hr:null, st:null };
+const connectedAt = { hr:0, st:0 };
+const quickDrops = { hr:0, st:0 };
+const NAME = { hr:'Puls', st:'Stryd' };
+// Én tilkobling om gangen – Android liker ikke parallelle GATT-tilkoblinger
+let queue = Promise.resolve();
+const queued = fn => { const p = queue.then(fn); queue = p.catch(()=>{}); return p; };
+
+async function subscribe(srv, service, charName, handler){
+  const s = await srv.getPrimaryService(service);
+  const c = await s.getCharacteristic(charName);
+  if (c._tmH) c.removeEventListener('characteristicvaluechanged', c._tmH);
+  c._tmH = e => handler(e.target.value);
+  c.addEventListener('characteristicvaluechanged', c._tmH);
+  await c.startNotifications();
+}
+
+async function connectOnce(kind){
+  const d = dev[kind];
+  log(NAME[kind] + ': kobler til «' + (d.name||'?') + '»…');
+  const srv = await d.gatt.connect();
+  log(NAME[kind] + ': GATT tilkoblet, venter litt…');
+  await sleep(700);                                   // Android trenger litt tid før tjenestesøk
+  if (!d.gatt.connected) throw new Error('koblet fra rett etter tilkobling');
+  if (kind==='hr'){
+    await subscribe(srv, 'heart_rate', 'heart_rate_measurement', onHr);
+    log('Puls: abonnerer på puls ✔');
+  } else {
+    let ok = false;
+    try { await subscribe(srv, 'running_speed_and_cadence', 'rsc_measurement', onRsc); ok = true; log('Stryd: pace/kadens ✔'); }
+    catch(e){ log('Stryd: pace/kadens feilet: ' + e.message); }
+    try { await subscribe(srv, 'cycling_power', 'cycling_power_measurement', onPower); ok = true; log('Stryd: watt ✔'); }
+    catch(e){ log('Stryd: watt feilet: ' + e.message); }
+    if (!ok) throw new Error('fant ingen data-tjenester');
+  }
+}
+
 async function connect(kind){
   const d = dev[kind]; if (!d) return;
+  connecting[kind] = true;
   chip(kind,'wait','kobler til '+(d.name||'')+'…');
-  const srv = await d.gatt.connect();
-  let ok = false;
-  if (kind==='hr'){
-    const s = await srv.getPrimaryService('heart_rate');
-    const c = await s.getCharacteristic('heart_rate_measurement');
-    c.addEventListener('characteristicvaluechanged', e => onHr(e.target.value));
-    await c.startNotifications(); ok = true;
-  } else {
-    try {
-      const s = await srv.getPrimaryService('running_speed_and_cadence');
-      const c = await s.getCharacteristic('rsc_measurement');
-      c.addEventListener('characteristicvaluechanged', e => onRsc(e.target.value));
-      await c.startNotifications(); ok = true;
-    } catch(e){ console.warn('RSC ikke tilgjengelig', e); }
-    try {
-      const s = await srv.getPrimaryService('cycling_power');
-      const c = await s.getCharacteristic('cycling_power_measurement');
-      c.addEventListener('characteristicvaluechanged', e => onPower(e.target.value));
-      await c.startNotifications(); ok = true;
-    } catch(e){ console.warn('Power ikke tilgjengelig', e); }
-  }
-  if (!ok) throw new Error('fant ingen data-tjenester');
-  let bat = '';
   try {
-    const b = await (await srv.getPrimaryService('battery_service')).getCharacteristic('battery_level');
-    bat = ' · 🔋' + (await b.readValue()).getUint8(0) + '%';
-  } catch(e){}
-  retry[kind] = 0;
-  chip(kind,'on',(d.name||'tilkoblet') + bat);
-  requestWake();
+    for (let a=1; ; a++){
+      try { await connectOnce(kind); break; }
+      catch(e){
+        log(NAME[kind] + ': forsøk ' + a + ' feilet – ' + (e.name||'') + ' ' + e.message);
+        if (a >= 3) throw e;
+        try { if (d.gatt.connected) d.gatt.disconnect(); } catch(_){}
+        await sleep(1200);
+      }
+    }
+    retry[kind] = 0; connectedAt[kind] = performance.now();
+    chip(kind,'on', d.name||'tilkoblet');
+    requestWake();
+  } finally { connecting[kind] = false; }
 }
 
 function onDisc(kind, d){
+  const upFor = connectedAt[kind] ? Math.round((performance.now()-connectedAt[kind])/1000) : 0;
+  connectedAt[kind] = 0;
+  log(NAME[kind] + ': frakoblet' + (upFor ? ' etter ' + upFor + 's' : ''));
+  if (connecting[kind]) return;                      // connect() håndterer feilen selv
+  if (upFor && upFor < 15 && ++quickDrops[kind] >= 2) dropHint(kind);
+  scheduleReconnect(kind, d);
+}
+
+function scheduleReconnect(kind, d){
   if (dev[kind] !== d || manualOff[kind]) { chip(kind,'off','frakoblet'); return; }
+  if (timers[kind]) return;                          // bare ett forsøk i kø
   const n = ++retry[kind];
-  const wait = Math.min(15000, 1000 * n);
-  chip(kind,'wait',`mistet forbindelse – prøver igjen (${n})`);
-  setTimeout(() => {
+  const wait = Math.min(15000, 1500 * n);
+  chip(kind,'wait','mistet forbindelse – nytt forsøk om ' + Math.round(wait/1000) + 's (' + n + ')');
+  timers[kind] = setTimeout(async () => {
+    timers[kind] = null;
     if (dev[kind] !== d || d.gatt.connected) return;
-    connect(kind).catch(() => onDisc(kind, d));
+    try { await queued(() => connect(kind)); }
+    catch(e){ if (n >= 3) dropHint(kind); scheduleReconnect(kind, d); }
   }, wait);
+}
+
+function dropHint(kind){
+  msg(kind==='hr'
+    ? 'Pulsbeltet mister forbindelsen hele tiden. Sjekk: 1) Beltet må sitte på kroppen – HRM 700 sovner uten puls. 2) Klokka må være koblet til beltet via ANT+, ikke Bluetooth. 3) Ingen andre apper (Zwift, Garmin Connect, Strava o.l.) på tab eller telefon er koblet til beltet. 4) Beltet skal ikke være paret i Android sine Bluetooth-innstillinger. Trykk «Logg» for detaljer.'
+    : 'Stryd mister forbindelsen hele tiden. Sjekk at klokka er koblet til Stryd via ANT+, at Stryd-appen på telefonen ikke er koblet til, og at podden er våken (rist den). Trykk «Logg» for detaljer.');
 }
 
 $('chipHr').onclick = () => pick('hr');
 $('chipSt').onclick = () => pick('st');
+$('btnLog').onclick = () => $('dlgLog').showModal();
+$('logClose').onclick = () => $('dlgLog').close();
+log('Side lastet · ' + ((navigator.userAgent.match(/(SamsungBrowser|Chrome|Firefox)\/[\d.]+/) || ['ukjent nettleser'])[0]));
 
 /* ---------- Skjerm våken + fullskjerm ---------- */
 let wake = null;
