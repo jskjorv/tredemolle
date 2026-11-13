@@ -65,7 +65,12 @@ button.b.icon{padding:9px 12px}
 #chartWrap{flex:1 1 auto;min-height:90px;background:var(--panel);border:1px solid var(--line);border-radius:16px;position:relative}
 #chart{position:absolute;inset:0;width:100%;height:100%}
 #legend{position:absolute;top:8px;left:14px;font-size:13px;color:var(--mute);display:flex;gap:14px}
-#legend i{display:inline-block;width:12px;height:3px;border-radius:2px;margin-right:5px;vertical-align:middle}
+#legend i{display:inline-block;width:14px;height:4px;border-radius:2px;margin-right:6px;vertical-align:middle}
+#legend{align-items:center;z-index:1}
+#legend button{background:var(--panel2);border:1px solid var(--line);color:var(--txt);border-radius:999px;padding:6px 12px;font-size:14px;cursor:pointer}
+#legend button.off{opacity:.4;text-decoration:line-through}
+#chartWrap.empty{flex:0 0 46px;min-height:46px}
+#chartWrap.empty #chartSpan{display:none}
 
 /* Kontroller nederst */
 footer{display:flex;gap:10px;align-items:center}
@@ -142,7 +147,7 @@ dialog .row{display:flex;gap:10px;justify-content:flex-end;margin-top:16px}
 
 <div id="chartWrap">
   <canvas id="chart"></canvas>
-  <div id="legend"><span><i style="background:var(--hr)"></i>Puls</span><span><i style="background:var(--pw)"></i>Watt</span><span><i style="background:var(--pace)"></i>Pace (høyere = raskere)</span><span id="chartSpan">siste 10 min</span></div>
+  <div id="legend"><button data-k="hr"><i style="background:var(--hr)"></i>Puls</button><button data-k="pw"><i style="background:var(--pw)"></i>Watt</button><button data-k="sp"><i style="background:var(--pace)"></i>Pace</button><span id="chartHint">høyere = raskere</span><span id="chartSpan">siste 10 min</span></div>
 </div>
 
 <footer>
@@ -175,7 +180,7 @@ dialog .row{display:flex;gap:10px;justify-content:flex-end;margin-top:16px}
 const $ = id => document.getElementById(id);
 
 /* ---------- Innstillinger ---------- */
-const DEF = {maxHr:190, cp:280, pwS:3, paceS:5, cadX2:false, auto:true};
+const DEF = {maxHr:190, cp:280, pwS:3, paceS:5, cadX2:false, auto:true, show:{hr:true, pw:true, sp:true}};
 let cfg = {...DEF};
 try { Object.assign(cfg, JSON.parse(localStorage.getItem('tm-cfg') || '{}')); } catch(e){}
 const saveCfg = () => { try { localStorage.setItem('tm-cfg', JSON.stringify(cfg)); } catch(e){} };
@@ -539,20 +544,29 @@ function drawChart(){
   const hrLo = hrs.length ? Math.min(...hrs)-10 : 80, hrHi = hrs.length ? Math.max(...hrs)+10 : 190;
   const pwLo = pws.length ? Math.max(0,Math.min(...pws)-30) : 0, pwHi = pws.length ? Math.max(...pws)+30 : 400;
   // CP-linje
-  if (cfg.cp > pwLo && cfg.cp < pwHi){
+  if (cfg.show.pw && cfg.cp > pwLo && cfg.cp < pwHi){
     const y = H-padB - (cfg.cp-pwLo)/(pwHi-pwLo)*(H-padT-padB);
     ctx.setLineDash([6*dpr,6*dpr]); ctx.strokeStyle = cs.getPropertyValue('--pw'); ctx.globalAlpha=.35; ctx.lineWidth=1.5*dpr;
     ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(W,y); ctx.stroke(); ctx.setLineDash([]); ctx.globalAlpha=1;
   }
   const sps = hist.map(p=>p.sp).filter(v=>v!=null);
-  if (sps.length){ const lo = Math.min(...sps), hi = Math.max(...sps), m = Math.max(0.3, (hi-lo)*0.15); plot('sp', cs.getPropertyValue('--pace'), lo-m, hi+m);
+  if (sps.length && cfg.show.sp){ const lo = Math.min(...sps), hi = Math.max(...sps), m = Math.max(0.3, (hi-lo)*0.15); plot('sp', cs.getPropertyValue('--pace'), lo-m, hi+m);
     ctx.fillStyle = cs.getPropertyValue('--pace'); ctx.font = `${12*dpr}px system-ui,sans-serif`; ctx.textAlign = 'right';
     ctx.textBaseline = 'top'; ctx.fillText(fmtPace(hi+m), W-6*dpr, padT);
     ctx.textBaseline = 'bottom'; ctx.fillText(fmtPace(Math.max(0.7, lo-m)), W-6*dpr, H-padB); }
-  plot('pw', cs.getPropertyValue('--pw'), pwLo, pwHi);
-  plot('hr', cs.getPropertyValue('--hr'), hrLo, hrHi);
+  if (cfg.show.pw) plot('pw', cs.getPropertyValue('--pw'), pwLo, pwHi);
+  if (cfg.show.hr) plot('hr', cs.getPropertyValue('--hr'), hrLo, hrHi);
 }
 setInterval(drawChart, 1000);
+function applyShow(){
+  if (!cfg.show || typeof cfg.show !== 'object') cfg.show = {...DEF.show};
+  document.querySelectorAll('#legend button').forEach(b => b.classList.toggle('off', !cfg.show[b.dataset.k]));
+  $('chartHint').style.display = cfg.show.sp ? '' : 'none';
+  $('chartWrap').classList.toggle('empty', !cfg.show.hr && !cfg.show.pw && !cfg.show.sp);
+  requestAnimationFrame(drawChart);
+}
+document.querySelectorAll('#legend button').forEach(b => b.onclick = () => { cfg.show = {...cfg.show, [b.dataset.k]: !cfg.show[b.dataset.k]}; saveCfg(); applyShow(); });
+applyShow();
 window.addEventListener('resize', drawChart);
 
 /* ---------- Innstillinger-dialog ---------- */
