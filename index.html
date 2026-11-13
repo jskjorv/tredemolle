@@ -142,7 +142,7 @@ dialog .row{display:flex;gap:10px;justify-content:flex-end;margin-top:16px}
 
 <div id="chartWrap">
   <canvas id="chart"></canvas>
-  <div id="legend"><span><i style="background:var(--hr)"></i>Puls</span><span><i style="background:var(--pw)"></i>Watt</span><span id="chartSpan">siste 10 min</span></div>
+  <div id="legend"><span><i style="background:var(--hr)"></i>Puls</span><span><i style="background:var(--pw)"></i>Watt</span><span><i style="background:var(--pace)"></i>Pace (høyere = raskere)</span><span id="chartSpan">siste 10 min</span></div>
 </div>
 
 <footer>
@@ -188,7 +188,7 @@ const HIST_MAX = 600;
 
 const sess = {
   running:false, elapsed:0, dist:0,
-  sumPw:0, nPw:0, sumHr:0, nHr:0,
+  sumPw:0, nPw:0, sumHr:0, nHr:0, maxHr:0,
   lap:{n:1, elapsed:0, dist:0, sumPw:0, nPw:0},
   lastMove:0
 };
@@ -429,7 +429,7 @@ function setRunning(on){
 $('btnStart').onclick = () => { setRunning(!sess.running); sess.manual = true; requestWake(); };
 $('btnReset').onclick = () => {
   if (sess.elapsed && !confirm('Nullstille økta?')) return;
-  Object.assign(sess, {running:false, elapsed:0, dist:0, sumPw:0, nPw:0, sumHr:0, nHr:0, manual:false,
+  Object.assign(sess, {running:false, elapsed:0, dist:0, sumPw:0, nPw:0, sumHr:0, nHr:0, maxHr:0, manual:false,
     lap:{n:1, elapsed:0, dist:0, sumPw:0, nPw:0}});
   hist.length = 0; laps.length = 0; $('lapInfo').textContent=''; setRunning(false);
 };
@@ -460,9 +460,9 @@ setInterval(() => {
     sess.elapsed += dt; sess.lap.elapsed += dt;
     const d = spd * dt/1000; sess.dist += d; sess.lap.dist += d;
     if (pw != null){ sess.sumPw += pw; sess.nPw++; sess.lap.sumPw += pw; sess.lap.nPw++; }
-    if (hr != null){ sess.sumHr += hr; sess.nHr++; }
+    if (hr != null){ sess.sumHr += hr; sess.nHr++; if (hr > sess.maxHr) sess.maxHr = hr; }
   }
-  hist.push({hr, pw: pw!=null ? avg(buf.pw, 3) : null});
+  hist.push({hr, pw: pw!=null ? avg(buf.pw, 3) : null, sp: spd > 0.6 ? avg(buf.spd, cfg.paceS) : null});
   if (hist.length > HIST_MAX) hist.shift();
 }, 1000);
 
@@ -504,6 +504,7 @@ function render(){
   $('sDist').innerHTML = (sess.dist/1000).toFixed(2) + '<small>km</small>';
   $('sAvgPw').innerHTML = (sess.nPw ? Math.round(sess.sumPw/sess.nPw) : '--') + '<small>W</small>';
   $('sAvgHr').textContent = sess.nHr ? Math.round(sess.sumHr/sess.nHr) : '--';
+  $('hrSub').textContent = sess.nHr ? 'Snitt ' + Math.round(sess.sumHr/sess.nHr) + ' · Maks ' + sess.maxHr : 'slag/min';
   $('sAvgPace').textContent = sess.elapsed>5000 && sess.dist>10 ? fmtPace(sess.dist/(sess.elapsed/1000)) : '--:--';
 }
 setInterval(render, 250);
@@ -543,6 +544,11 @@ function drawChart(){
     ctx.setLineDash([6*dpr,6*dpr]); ctx.strokeStyle = cs.getPropertyValue('--pw'); ctx.globalAlpha=.35; ctx.lineWidth=1.5*dpr;
     ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(W,y); ctx.stroke(); ctx.setLineDash([]); ctx.globalAlpha=1;
   }
+  const sps = hist.map(p=>p.sp).filter(v=>v!=null);
+  if (sps.length){ const lo = Math.min(...sps), hi = Math.max(...sps), m = Math.max(0.3, (hi-lo)*0.15); plot('sp', cs.getPropertyValue('--pace'), lo-m, hi+m);
+    ctx.fillStyle = cs.getPropertyValue('--pace'); ctx.font = `${12*dpr}px system-ui,sans-serif`; ctx.textAlign = 'right';
+    ctx.textBaseline = 'top'; ctx.fillText(fmtPace(hi+m), W-6*dpr, padT);
+    ctx.textBaseline = 'bottom'; ctx.fillText(fmtPace(Math.max(0.7, lo-m)), W-6*dpr, H-padB); }
   plot('pw', cs.getPropertyValue('--pw'), pwLo, pwHi);
   plot('hr', cs.getPropertyValue('--hr'), hrLo, hrHi);
 }
