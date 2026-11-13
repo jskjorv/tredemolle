@@ -1,0 +1,418 @@
+<!DOCTYPE html>
+<html lang="no">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<meta name="theme-color" content="#0b0d10">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<title>Tredemølle – Stryd + Puls</title>
+<style>
+  :root{
+    --bg:#0b0d10; --panel:#14181d; --line:#232a32; --txt:#e9eef3; --dim:#7d8894;
+    --pwr:#ffb020; --pace:#3fb6ff; --hr:#ff4d5e; --ok:#3ddc84;
+    --z1:#8a96a3; --z2:#3fb6ff; --z3:#3ddc84; --z4:#ffb020; --z5:#ff4d5e;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{height:100%;background:var(--bg);color:var(--txt);
+    font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;overflow:hidden;
+    -webkit-user-select:none;user-select:none}
+  .app{height:100%;display:grid;grid-template-rows:auto 1fr auto auto;gap:1.2vmin;padding:1.4vmin}
+  /* top bar */
+  .top{display:flex;align-items:center;gap:1vmin;flex-wrap:wrap}
+  .btn{background:var(--panel);color:var(--txt);border:1px solid var(--line);border-radius:1.2vmin;
+    padding:1.3vmin 2vmin;font-size:max(14px,2.1vmin);font-weight:600;display:flex;align-items:center;gap:1vmin;cursor:pointer}
+  .btn:active{transform:scale(.97)}
+  .dot{width:1.4vmin;height:1.4vmin;min-width:10px;min-height:10px;border-radius:50%;background:#444}
+  .dot.on{background:var(--ok);box-shadow:0 0 8px var(--ok)}
+  .dot.wait{background:var(--pwr);animation:blink 1s infinite}
+  @keyframes blink{50%{opacity:.3}}
+  .spacer{flex:1}
+  .clock{font-variant-numeric:tabular-nums;font-size:max(16px,3vmin);font-weight:700;color:var(--dim)}
+  /* main tiles */
+  .main{display:grid;grid-template-columns:repeat(3,1fr);gap:1.2vmin;min-height:0}
+  @media (orientation:portrait){.main{grid-template-columns:1fr;grid-template-rows:repeat(3,1fr)}}
+  .tile{background:var(--panel);border:1px solid var(--line);border-radius:2vmin;position:relative;
+    display:flex;flex-direction:column;justify-content:center;align-items:center;overflow:hidden;min-height:0}
+  .tile .lbl{position:absolute;top:1.6vmin;left:2vmin;font-size:max(13px,2.2vmin);letter-spacing:.15em;
+    text-transform:uppercase;color:var(--dim);font-weight:700}
+  .tile .zone{position:absolute;top:1.4vmin;right:2vmin;font-size:max(13px,2.2vmin);font-weight:800;
+    padding:.4vmin 1.4vmin;border-radius:1vmin;background:#222;color:#000}
+  .tile .val{font-variant-numeric:tabular-nums;font-weight:800;line-height:.9;
+    font-size:clamp(48px,15vmin,22vw);letter-spacing:-.02em}
+  @media (orientation:portrait){.tile .val{font-size:clamp(48px,14vh,30vw)}}
+  .tile .unit{font-size:max(14px,2.6vmin);color:var(--dim);margin-top:1vmin;font-weight:600}
+  .tile .sub{position:absolute;bottom:1.4vmin;left:0;right:0;text-align:center;font-size:max(13px,2.1vmin);color:var(--dim);
+    font-variant-numeric:tabular-nums}
+  .tile .bar{position:absolute;left:0;bottom:0;height:.8vmin;min-height:5px;width:100%;background:transparent;transition:background .4s}
+  #tPwr .val{color:var(--pwr)} #tPace .val{color:var(--pace)} #tHr .val{color:var(--hr)}
+  .stale .val{opacity:.25}
+  /* stats row */
+  .stats{display:grid;grid-template-columns:repeat(6,1fr);gap:1.2vmin}
+  @media (orientation:portrait){.stats{grid-template-columns:repeat(3,1fr)}}
+  .stat{background:var(--panel);border:1px solid var(--line);border-radius:1.4vmin;padding:1.2vmin 1.6vmin}
+  .stat .k{font-size:max(11px,1.7vmin);color:var(--dim);letter-spacing:.1em;text-transform:uppercase;font-weight:700}
+  .stat .v{font-size:max(18px,4vmin);font-weight:800;font-variant-numeric:tabular-nums;margin-top:.3vmin}
+  /* chart */
+  .chartWrap{background:var(--panel);border:1px solid var(--line);border-radius:1.4vmin;height:15vh;min-height:80px;position:relative}
+  canvas{width:100%;height:100%;display:block}
+  .legend{position:absolute;top:.8vmin;right:1.4vmin;font-size:max(11px,1.6vmin);color:var(--dim);display:flex;gap:1.6vmin}
+  .legend b{display:inline-block;width:1.6vmin;height:.6vmin;min-width:10px;min-height:3px;border-radius:2px;vertical-align:middle;margin-right:.5vmin}
+  /* modal */
+  .modal{position:fixed;inset:0;background:rgba(0,0,0,.7);display:none;align-items:center;justify-content:center;z-index:10;padding:3vmin}
+  .modal.show{display:flex}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:2vmin;padding:3vmin;max-width:640px;width:100%;
+    max-height:90vh;overflow:auto;font-size:max(15px,2.2vmin)}
+  .card h2{margin-bottom:2vmin;font-size:max(20px,3vmin)}
+  .card label{display:flex;justify-content:space-between;align-items:center;gap:2vmin;padding:1.2vmin 0;border-bottom:1px solid var(--line)}
+  .card input[type=number]{width:8em;background:#0b0d10;color:var(--txt);border:1px solid var(--line);border-radius:1vmin;padding:1vmin;font-size:inherit;text-align:right}
+  .card input[type=checkbox]{width:2.4em;height:2.4em}
+  .card .row{display:flex;gap:1.5vmin;justify-content:flex-end;margin-top:2.5vmin;flex-wrap:wrap}
+  .card p{color:var(--dim);margin:1.2vmin 0;line-height:1.4}
+  .toast{position:fixed;left:50%;bottom:3vmin;transform:translateX(-50%);background:#222;border:1px solid var(--line);
+    padding:1.4vmin 2.4vmin;border-radius:1.4vmin;font-size:max(14px,2vmin);opacity:0;transition:opacity .3s;pointer-events:none;z-index:20;max-width:90vw;text-align:center}
+  .toast.show{opacity:1}
+</style>
+</head>
+<body>
+<div class="app">
+  <div class="top">
+    <button class="btn" id="bStryd"><span class="dot" id="dStryd"></span>Stryd</button>
+    <button class="btn" id="bHr"><span class="dot" id="dHr"></span>Pulsbelte</button>
+    <button class="btn" id="bStart">▶ Start</button>
+    <button class="btn" id="bLap">Runde</button>
+    <div class="spacer"></div>
+    <div class="clock" id="clock">--:--</div>
+    <button class="btn" id="bFs" title="Fullskjerm">⛶</button>
+    <button class="btn" id="bSet" title="Innstillinger">⚙</button>
+  </div>
+
+  <div class="main">
+    <div class="tile stale" id="tPwr">
+      <div class="lbl">Watt</div><div class="zone" id="zPwr">–</div>
+      <div class="val" id="vPwr">--</div><div class="unit">W</div>
+      <div class="sub" id="sPwr">snitt -- · runde --</div><div class="bar" id="barPwr"></div>
+    </div>
+    <div class="tile stale" id="tPace">
+      <div class="lbl">Pace</div>
+      <div class="val" id="vPace">-:--</div><div class="unit">min/km</div>
+      <div class="sub" id="sPace">-- km/t · -- spm</div><div class="bar"></div>
+    </div>
+    <div class="tile stale" id="tHr">
+      <div class="lbl">Puls</div><div class="zone" id="zHr">–</div>
+      <div class="val" id="vHr">--</div><div class="unit">slag/min</div>
+      <div class="sub" id="sHr">snitt -- · maks --</div><div class="bar" id="barHr"></div>
+    </div>
+  </div>
+
+  <div class="stats">
+    <div class="stat"><div class="k">Tid</div><div class="v" id="xTime">0:00</div></div>
+    <div class="stat"><div class="k">Distanse</div><div class="v" id="xDist">0,00</div></div>
+    <div class="stat"><div class="k">Snittpace</div><div class="v" id="xAvgPace">-:--</div></div>
+    <div class="stat"><div class="k">Rundetid</div><div class="v" id="xLapTime">0:00</div></div>
+    <div class="stat"><div class="k">Runde-pace</div><div class="v" id="xLapPace">-:--</div></div>
+    <div class="stat"><div class="k">Runde nr</div><div class="v" id="xLapNo">1</div></div>
+  </div>
+
+  <div class="chartWrap">
+    <canvas id="chart"></canvas>
+    <div class="legend"><span><b style="background:var(--pwr)"></b>Watt</span><span><b style="background:var(--hr)"></b>Puls</span><span>siste 10 min</span></div>
+  </div>
+</div>
+
+<div class="modal" id="mSet">
+  <div class="card">
+    <h2>Innstillinger</h2>
+    <label>Critical Power (CP), W <input type="number" id="iCp" min="100" max="600"></label>
+    <label>Makspuls <input type="number" id="iMax" min="120" max="230"></label>
+    <label>Glatting watt (sek) <input type="number" id="iSmP" min="1" max="30"></label>
+    <label>Glatting pace (sek) <input type="number" id="iSmS" min="1" max="30"></label>
+    <label>Kalibrering Stryd (%) <input type="number" id="iCal" min="80" max="120" step="0.1"></label>
+    <label>Auto-pause når båndet står <input type="checkbox" id="iAuto"></label>
+    <p>Wattsoner følger Stryd (andel av CP): Lett &lt;80 %, Moderat 80–90, Terskel 90–100, Intervall 100–115, Repetisjon &gt;115.
+       Pulssoner: % av makspuls (50/60/70/80/90).</p>
+    <p>Tips: Klokka kan fortsatt ta opp økta via ANT+ samtidig. Både Stryd og HRM-beltet tåler flere tilkoblinger.</p>
+    <div class="row">
+      <button class="btn" id="bDemo">Demo-modus</button>
+      <button class="btn" id="bReset">Nullstill økt</button>
+      <button class="btn" id="bClose">Lagre og lukk</button>
+    </div>
+  </div>
+</div>
+<div class="toast" id="toast"></div>
+
+<script>
+(() => {
+  const $ = id => document.getElementById(id);
+
+  // ---------- settings ----------
+  const DEF = {cp:280, maxHr:190, smP:3, smS:5, cal:100, auto:true};
+  let S = {...DEF};
+  try { Object.assign(S, JSON.parse(localStorage.getItem('tm_settings')||'{}')); } catch(e){}
+  const saveS = () => { try { localStorage.setItem('tm_settings', JSON.stringify(S)); } catch(e){} };
+
+  // ---------- state ----------
+  const live = {power:null, pTime:0, speed:null, sTime:0, cad:null, hr:null, hTime:0};
+  const pBuf = [], sBuf = [];               // rolling buffers [t, value]
+  const sess = {running:false, elapsed:0, dist:0, pSum:0, pN:0, hSum:0, hN:0, hMax:0,
+                lapNo:1, lapStart:0, lapDist0:0, lapPSum:0, lapPN:0, lastTick:0};
+  const hist = [];                          // per second {p, h}
+  const HIST_MAX = 600;
+
+  function toast(msg, ms=2500){ const t=$('toast'); t.textContent=msg; t.classList.add('show');
+    clearTimeout(toast._t); toast._t=setTimeout(()=>t.classList.remove('show'), ms); }
+
+  function pushBuf(buf, v, win){ const now=performance.now(); buf.push([now,v]);
+    while(buf.length && now-buf[0][0] > win*1000) buf.shift(); }
+  function avgBuf(buf, win){ const now=performance.now(); let s=0,n=0;
+    for(const [t,v] of buf) if(now-t<=win*1000){s+=v;n++;} return n? s/n : null; }
+
+  // ---------- BLE ----------
+  const hasBT = !!(navigator.bluetooth && navigator.bluetooth.requestDevice);
+
+  function setDot(id, st){ const d=$(id); d.className='dot'+(st==='on'?' on':st==='wait'?' wait':''); }
+
+  async function connectDevice(device, setup, dotId, label){
+    setDot(dotId,'wait');
+    const server = await device.gatt.connect();
+    await setup(server);
+    setDot(dotId,'on');
+    toast(label+' tilkoblet: '+(device.name||''));
+  }
+
+  function autoReconnect(device, setup, dotId, label){
+    let tries = 0;
+    device.addEventListener('gattserverdisconnected', async function retry(){
+      setDot(dotId,'wait'); toast(label+' frakoblet – prøver igjen …');
+      while(tries < 30){
+        tries++;
+        await new Promise(r=>setTimeout(r, Math.min(1000*tries, 5000)));
+        try { await connectDevice(device, setup, dotId, label); tries=0; return; } catch(e){}
+      }
+      setDot(dotId,''); toast(label+' mistet. Trykk knappen for å koble til på nytt.', 4000);
+    });
+  }
+
+  // Heart rate (0x180D / 0x2A37)
+  async function setupHr(server){
+    const svc = await server.getPrimaryService('heart_rate');
+    const ch = await svc.getCharacteristic('heart_rate_measurement');
+    ch.addEventListener('characteristicvaluechanged', e => {
+      const dv = e.target.value, f = dv.getUint8(0);
+      const hr = (f & 1) ? dv.getUint16(1, true) : dv.getUint8(1);
+      if(hr > 0){ live.hr = hr; live.hTime = performance.now(); }
+    });
+    await ch.startNotifications();
+  }
+
+  // Stryd: Running Speed & Cadence (0x1814/0x2A53) + Cycling Power (0x1818/0x2A63)
+  async function setupStryd(server){
+    let ok = false;
+    try {
+      const rsc = await server.getPrimaryService('running_speed_and_cadence');
+      const ch = await rsc.getCharacteristic('rsc_measurement');
+      ch.addEventListener('characteristicvaluechanged', e => {
+        const dv = e.target.value;
+        const speed = dv.getUint16(1, true) / 256 * (S.cal/100);   // m/s
+        const cad = dv.getUint8(3);
+        live.speed = speed; live.cad = cad; live.sTime = performance.now();
+        pushBuf(sBuf, speed, 30);
+      });
+      await ch.startNotifications(); ok = true;
+    } catch(e){ console.warn('RSC', e); }
+    try {
+      const cps = await server.getPrimaryService('cycling_power');
+      const ch = await cps.getCharacteristic('cycling_power_measurement');
+      ch.addEventListener('characteristicvaluechanged', e => {
+        const p = e.target.value.getInt16(2, true);
+        if(p >= 0 && p < 2000){ live.power = p; live.pTime = performance.now(); pushBuf(pBuf, p, 30); }
+      });
+      await ch.startNotifications(); ok = true;
+    } catch(e){ console.warn('CPS', e); }
+    if(!ok) throw new Error('Fant verken pace eller watt på enheten');
+  }
+
+  async function pick(kind){
+    if(!hasBT){ toast('Denne nettleseren støtter ikke Bluetooth. Bruk Chrome på Android (eller Bluefy på iPad).', 5000); return; }
+    try {
+      let device, setup, dot, label;
+      if(kind==='hr'){
+        device = await navigator.bluetooth.requestDevice({filters:[{services:['heart_rate']}]});
+        setup = setupHr; dot='dHr'; label='Pulsbelte';
+      } else {
+        device = await navigator.bluetooth.requestDevice({
+          filters:[{namePrefix:'Stryd'},{services:['cycling_power']},{services:['running_speed_and_cadence']}],
+          optionalServices:['cycling_power','running_speed_and_cadence']});
+        setup = setupStryd; dot='dStryd'; label='Stryd';
+      }
+      await connectDevice(device, setup, dot, label);
+      autoReconnect(device, setup, dot, label);
+    } catch(e){
+      if(e && e.name !== 'NotFoundError') toast('Feil: '+(e.message||e), 4000);
+      setDot(kind==='hr'?'dHr':'dStryd','');
+    }
+  }
+  $('bHr').onclick = () => pick('hr');
+  $('bStryd').onclick = () => pick('stryd');
+
+  // ---------- zones ----------
+  const PZ = [{n:'Lett',c:'var(--z1)',max:.80},{n:'Moderat',c:'var(--z2)',max:.90},{n:'Terskel',c:'var(--z3)',max:1.0},
+              {n:'Intervall',c:'var(--z4)',max:1.15},{n:'Rep',c:'var(--z5)',max:99}];
+  const HZ = [{n:'S1',c:'var(--z1)',max:.60},{n:'S2',c:'var(--z2)',max:.70},{n:'S3',c:'var(--z3)',max:.80},
+              {n:'S4',c:'var(--z4)',max:.90},{n:'S5',c:'var(--z5)',max:99}];
+  const zoneOf = (zs, frac) => zs.find(z => frac < z.max);
+
+  // ---------- formatting ----------
+  const fmtPace = mps => { if(!mps || mps < 0.5) return '-:--'; let s = 1000/mps; if(s > 5999) return '-:--';
+    s = Math.round(s); return Math.floor(s/60)+':'+String(s%60).padStart(2,'0'); };
+  const fmtTime = sec => { sec=Math.floor(sec); const h=Math.floor(sec/3600), m=Math.floor(sec%3600/60), s=sec%60;
+    return (h? h+':'+String(m).padStart(2,'0') : m)+':'+String(s).padStart(2,'0'); };
+  const fmtKm = m => (m/1000).toFixed(2).replace('.',',');
+
+  // ---------- session ----------
+  function setRunning(r){ sess.running=r; $('bStart').textContent = r ? '⏸ Pause' : '▶ Start'; }
+  $('bStart').onclick = () => { setRunning(!sess.running); manualPause = !sess.running; requestWake(); };
+  let manualPause = false;
+  $('bLap').onclick = () => {
+    sess.lapNo++; sess.lapStart = sess.elapsed; sess.lapDist0 = sess.dist; sess.lapPSum=0; sess.lapPN=0;
+    toast('Runde '+sess.lapNo);
+  };
+  function resetSession(){
+    Object.assign(sess,{running:false,elapsed:0,dist:0,pSum:0,pN:0,hSum:0,hN:0,hMax:0,lapNo:1,lapStart:0,lapDist0:0,lapPSum:0,lapPN:0});
+    hist.length=0; setRunning(false); manualPause=false;
+  }
+
+  // 1 Hz accumulator
+  setInterval(() => {
+    const now = performance.now();
+    const sFresh = live.speed!=null && now-live.sTime < 4000;
+    const pFresh = live.power!=null && now-live.pTime < 4000;
+    const hFresh = live.hr!=null && now-live.hTime < 5000;
+    const spd = sFresh ? live.speed : 0;
+
+    if(S.auto && !manualPause){
+      if(!sess.running && spd > 1.0) setRunning(true);
+      else if(sess.running && sFresh && spd < 0.3) setRunning(false);
+    }
+    if(sess.running){
+      sess.elapsed += 1; sess.dist += spd;
+      if(pFresh){ sess.pSum+=live.power; sess.pN++; sess.lapPSum+=live.power; sess.lapPN++; }
+      if(hFresh){ sess.hSum+=live.hr; sess.hN++; sess.hMax=Math.max(sess.hMax, live.hr); }
+      hist.push({p: pFresh? avgBuf(pBuf,S.smP) : null, h: hFresh? live.hr : null});
+      if(hist.length > HIST_MAX) hist.shift();
+    }
+  }, 1000);
+
+  // ---------- render ----------
+  function render(){
+    const now = performance.now();
+    const pFresh = live.power!=null && now-live.pTime < 4000;
+    const sFresh = live.speed!=null && now-live.sTime < 4000;
+    const hFresh = live.hr!=null && now-live.hTime < 5000;
+
+    // power
+    $('tPwr').classList.toggle('stale', !pFresh);
+    const pS = pFresh ? avgBuf(pBuf, S.smP) : null;
+    $('vPwr').textContent = pS!=null ? Math.round(pS) : '--';
+    if(pS!=null){ const z = zoneOf(PZ, pS/S.cp); $('zPwr').textContent = z.n+' '+Math.round(pS/S.cp*100)+'%';
+      $('zPwr').style.background=z.c; $('barPwr').style.background=z.c; }
+    else { $('zPwr').textContent='–'; $('zPwr').style.background='#222'; $('barPwr').style.background='transparent'; }
+    $('sPwr').textContent = 'snitt '+(sess.pN? Math.round(sess.pSum/sess.pN):'--')+' · runde '+(sess.lapPN? Math.round(sess.lapPSum/sess.lapPN):'--');
+
+    // pace
+    $('tPace').classList.toggle('stale', !sFresh);
+    const sS = sFresh ? avgBuf(sBuf, S.smS) : null;
+    $('vPace').textContent = fmtPace(sS);
+    $('sPace').textContent = (sS!=null? (sS*3.6).toFixed(1).replace('.',','):'--')+' km/t · '+(sFresh&&live.cad? live.cad:'--')+' spm';
+
+    // hr
+    $('tHr').classList.toggle('stale', !hFresh);
+    $('vHr').textContent = hFresh ? live.hr : '--';
+    if(hFresh){ const z = zoneOf(HZ, live.hr/S.maxHr); $('zHr').textContent=z.n; $('zHr').style.background=z.c; $('barHr').style.background=z.c; }
+    else { $('zHr').textContent='–'; $('zHr').style.background='#222'; $('barHr').style.background='transparent'; }
+    $('sHr').textContent = 'snitt '+(sess.hN? Math.round(sess.hSum/sess.hN):'--')+' · maks '+(sess.hMax||'--');
+
+    // stats
+    $('xTime').textContent = fmtTime(sess.elapsed);
+    $('xDist').textContent = fmtKm(sess.dist);
+    $('xAvgPace').textContent = sess.elapsed>5 ? fmtPace(sess.dist/sess.elapsed) : '-:--';
+    const lt = sess.elapsed - sess.lapStart, ld = sess.dist - sess.lapDist0;
+    $('xLapTime').textContent = fmtTime(lt);
+    $('xLapPace').textContent = lt>5 ? fmtPace(ld/lt) : '-:--';
+    $('xLapNo').textContent = sess.lapNo;
+
+    const d = new Date(); $('clock').textContent = d.getHours().toString().padStart(2,'0')+':'+d.getMinutes().toString().padStart(2,'0');
+    drawChart();
+    requestAnimationFrame(render);
+  }
+
+  // ---------- chart ----------
+  const cv = $('chart'), cx = cv.getContext('2d');
+  let lastDraw = 0;
+  function drawChart(){
+    const now = performance.now(); if(now-lastDraw < 500) return; lastDraw = now;
+    const dpr = window.devicePixelRatio||1, w = cv.clientWidth, h = cv.clientHeight;
+    if(cv.width !== w*dpr || cv.height !== h*dpr){ cv.width=w*dpr; cv.height=h*dpr; }
+    cx.setTransform(dpr,0,0,dpr,0,0); cx.clearRect(0,0,w,h);
+    const pad = 6, n = HIST_MAX, xs = (w-2*pad)/(n-1), off = n-hist.length;
+    // CP line
+    const pMax = Math.max(S.cp*1.4, ...hist.map(o=>o.p||0)), pMin = 0;
+    const yP = v => h-pad-(v-pMin)/(pMax-pMin)*(h-2*pad);
+    cx.strokeStyle='rgba(255,176,32,.25)'; cx.setLineDash([4,4]); cx.lineWidth=1;
+    cx.beginPath(); cx.moveTo(pad,yP(S.cp)); cx.lineTo(w-pad,yP(S.cp)); cx.stroke(); cx.setLineDash([]);
+    const hMin = 60, hMax = S.maxHr;
+    const yH = v => h-pad-(Math.min(Math.max(v,hMin),hMax)-hMin)/(hMax-hMin)*(h-2*pad);
+    const line = (key, color, yf) => {
+      cx.strokeStyle=color; cx.lineWidth=2.5; cx.lineJoin='round'; cx.beginPath(); let pen=false;
+      hist.forEach((o,i)=>{ const v=o[key]; if(v==null){pen=false;return;}
+        const x=pad+(off+i)*xs, y=yf(v); pen? cx.lineTo(x,y) : cx.moveTo(x,y); pen=true; });
+      cx.stroke();
+    };
+    line('p','#ffb020',yP); line('h','#ff4d5e',yH);
+  }
+
+  // ---------- settings modal ----------
+  function openSet(){ $('iCp').value=S.cp; $('iMax').value=S.maxHr; $('iSmP').value=S.smP; $('iSmS').value=S.smS;
+    $('iCal').value=S.cal; $('iAuto').checked=S.auto; $('mSet').classList.add('show'); }
+  $('bSet').onclick = openSet;
+  $('bClose').onclick = () => {
+    const num = (id, d) => { const v = parseFloat($(id).value); return isFinite(v) && v>0 ? v : d; };
+    S.cp=num('iCp',DEF.cp); S.maxHr=num('iMax',DEF.maxHr); S.smP=num('iSmP',DEF.smP); S.smS=num('iSmS',DEF.smS);
+    S.cal=num('iCal',DEF.cal); S.auto=$('iAuto').checked; saveS(); $('mSet').classList.remove('show');
+  };
+  let confirmReset = false;
+  $('bReset').onclick = () => {
+    if(!confirmReset){ confirmReset=true; $('bReset').textContent='Trykk igjen for å bekrefte'; setTimeout(()=>{confirmReset=false;$('bReset').textContent='Nullstill økt';},3000); return; }
+    resetSession(); confirmReset=false; $('bReset').textContent='Nullstill økt'; toast('Økta er nullstilt');
+  };
+
+  // ---------- demo ----------
+  let demoT = null;
+  $('bDemo').onclick = () => {
+    if(demoT){ clearInterval(demoT); demoT=null; $('bDemo').textContent='Demo-modus'; setDot('dStryd',''); setDot('dHr',''); return; }
+    $('bDemo').textContent='Stopp demo'; setDot('dStryd','on'); setDot('dHr','on'); let t=0, hr=120;
+    demoT = setInterval(()=>{ t++; const hard = Math.floor(t/60)%2===1;
+      const sp = (hard? 4.4:3.3) + (Math.random()-.5)*.1;
+      live.speed=sp; live.cad=hard?182:170; live.sTime=performance.now(); pushBuf(sBuf,sp,30);
+      const p = Math.round(sp*72 + (Math.random()-.5)*12); live.power=p; live.pTime=performance.now(); pushBuf(pBuf,p,30);
+      hr += ((hard?172:138)-hr)*0.05 + (Math.random()-.5); live.hr=Math.round(hr); live.hTime=performance.now();
+    },1000);
+    $('mSet').classList.remove('show');
+  };
+
+  // ---------- fullscreen + wake lock ----------
+  $('bFs').onclick = async () => { try {
+      if(!document.fullscreenElement) await document.documentElement.requestFullscreen(); else await document.exitFullscreen();
+    } catch(e){ toast('Fullskjerm støttes ikke her'); } requestWake(); };
+  let wake = null;
+  async function requestWake(){ try { if('wakeLock' in navigator && !wake){ wake = await navigator.wakeLock.request('screen');
+      wake.addEventListener('release',()=>{wake=null;}); } } catch(e){} }
+  document.addEventListener('visibilitychange', ()=>{ if(document.visibilityState==='visible') requestWake(); });
+  document.addEventListener('click', requestWake, {once:true});
+
+  if(!hasBT) setTimeout(()=>toast('Bluetooth er ikke tilgjengelig i denne nettleseren – bruk Chrome på Android, eller Bluefy på iPad. Demo-modus finnes under ⚙.', 6000), 600);
+  render();
+})();
+</script>
+</body>
+</html>
